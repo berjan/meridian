@@ -820,10 +820,11 @@ export function createProxyServer(config: Partial<ProxyConfig> = {}) {
                 textEventsForwarded,
                 error: error instanceof Error ? error.message : String(error)
               })
-              claudeLog("proxy.anthropic.error", { error: error instanceof Error ? error.message : String(error) })
+              const streamErr = classifyError(error instanceof Error ? error.message : String(error))
+              claudeLog("proxy.anthropic.error", { error: error instanceof Error ? error.message : String(error), classified: streamErr.type })
               safeEnqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({
                 type: "error",
-                error: { type: "api_error", message: error instanceof Error ? error.message : "Unknown error" }
+                error: { type: streamErr.type, message: streamErr.message }
               })}\n\n`), "error_event")
               if (!streamClosed) {
                 controller.close()
@@ -873,6 +874,36 @@ export function createProxyServer(config: Partial<ProxyConfig> = {}) {
     const startedAt = Date.now()
     claudeLog("request.enter", { requestId, endpoint: "/messages" })
     return handleMessages(c, { requestId, endpoint: "/messages", queueEnteredAt: startedAt, queueStartedAt: startedAt })
+  })
+
+  // Health check endpoint — verifies auth status
+  app.get("/health", (c) => {
+    try {
+      const authJson = execSync("claude auth status", { encoding: "utf-8", timeout: 5000 })
+      const auth = JSON.parse(authJson)
+      if (!auth.loggedIn) {
+        return c.json({
+          status: "unhealthy",
+          error: "Not logged in. Run: claude login",
+          auth: { loggedIn: false }
+        }, 503)
+      }
+      return c.json({
+        status: "healthy",
+        auth: {
+          loggedIn: true,
+          email: auth.email,
+          subscriptionType: auth.subscriptionType,
+        },
+        mode: process.env.CLAUDE_PROXY_PASSTHROUGH ? "passthrough" : "internal",
+      })
+    } catch {
+      return c.json({
+        status: "degraded",
+        error: "Could not verify auth status",
+        mode: process.env.CLAUDE_PROXY_PASSTHROUGH ? "passthrough" : "internal",
+      })
+    }
   })
 
   return { app, config: finalConfig }
