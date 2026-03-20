@@ -58,6 +58,10 @@ The Claude Agent SDK exposes a `PreToolUse` hook that fires before any tool exec
 
 1. **Claude Max subscription** — [Subscribe here](https://claude.ai/settings/billing)
 2. **Claude CLI** authenticated: `npm install -g @anthropic-ai/claude-code && claude login`
+3. **Clear any existing OpenCode Anthropic auth** — if you previously used OpenCode with a real Anthropic API key, log out first or the cached auth will override the proxy:
+   ```bash
+   opencode auth logout   # select "anthropic" when prompted
+   ```
 
 ### Option A: npm Install
 
