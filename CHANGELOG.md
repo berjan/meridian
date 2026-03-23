@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.6](https://github.com/rynfar/opencode-claude-max-proxy/compare/v1.13.5...v1.13.6) (2026-03-23)
+
+
+### Bug Fixes
+
+* replace time-based session TTL with durable count-bounded storage ([121e82d](https://github.com/rynfar/opencode-claude-max-proxy/commit/121e82d95b6b84f3b6ad46d116cdc6ee8bdfe029))
+* replace time-based session TTL with durable count-bounded storage ([71b2cc7](https://github.com/rynfar/opencode-claude-max-proxy/commit/71b2cc7661f407c827a43b5cc1f66885c7d25041)), closes [#99](https://github.com/rynfar/opencode-claude-max-proxy/issues/99)
+
 ## [1.13.5](https://github.com/rynfar/opencode-claude-max-proxy/compare/v1.13.4...v1.13.5) (2026-03-23)
 
 
