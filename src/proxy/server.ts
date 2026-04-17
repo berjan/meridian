@@ -300,6 +300,11 @@ export function createProxyServer(config: Partial<ProxyConfig> = {}): ProxyServe
           Object.keys(profile.env).length > 0 ? profile.env : undefined
         )
         const agentMode = c.req.header("x-opencode-agent-mode") ?? null
+        // Opaque tag clients can send to distinguish concurrent request flows
+        // from the same conversation (e.g., pylon's main chat vs. memory-extract fork vs. subagent).
+        // Logged for observability; fork-*/subagent-* values also skip fingerprint cache (see below).
+        // Examples: "main", "fork-memory-extract", "subagent-scout".
+        const requestSource = c.req.header("x-meridian-source")?.slice(0, 64) || undefined
         let model = mapModelToClaudeModel(body.model || "sonnet", authStatus?.subscriptionType, agentMode)
         // Allow adapter to override streaming preference (e.g. LiteLLM requires non-streaming)
         const adapterStreamPref = adapter.prefersStreaming?.(body)
@@ -403,7 +408,25 @@ export function createProxyServer(config: Partial<ProxyConfig> = {}): ProxyServe
           ? `${profile.id}:${agentSessionId}` : agentSessionId
         const profileScopedCwd = profile.id !== "default"
           ? `${workingDirectory}::profile=${profile.id}` : workingDirectory
-        const lineageResult = lookupSession(profileSessionId, body.messages || [], profileScopedCwd)
+        // Clients that run concurrent sub-request flows in the same conversation
+        // (e.g. pylon's memory-extract fork or subagent children) share the same
+        // (firstUserMessage, cwd) fingerprint as the parent — so meridian's
+        // fingerprint cache conflates them and bounces the parent through
+        // continuous undo/modified-continuation/diverged reclassifications as
+        // each flow writes different message hashes to the shared key.
+        //
+        // When x-meridian-source marks a request as an independent fork or
+        // subagent, skip fingerprint lookup (no reclassification) and skip the
+        // write at end of turn (no cache pollution). The main conversation
+        // keeps its cache entry intact across forks.
+        //
+        // Opt-in via header value: clients that don't set the header are
+        // unaffected — behavior is byte-identical to today.
+        const isIndependentSession =
+          requestSource?.startsWith("fork-") || requestSource?.startsWith("subagent-") || false
+        const lineageResult = isIndependentSession
+          ? { type: "diverged" as const }
+          : lookupSession(profileSessionId, body.messages || [], profileScopedCwd)
         const isResume = lineageResult.type === "continuation" || lineageResult.type === "compaction"
         const isUndo = lineageResult.type === "undo"
         const cachedSession = lineageResult.type !== "diverged" ? lineageResult.session : undefined
@@ -421,13 +444,13 @@ export function createProxyServer(config: Partial<ProxyConfig> = {}): ProxyServe
         const lineageType = lineageResult.type === "diverged" && !cachedSession ? "new" : lineageResult.type
         const msgCount = Array.isArray(body.messages) ? body.messages.length : 0
         const toolCount = body.tools?.length ?? 0
-        const requestLogLine = `${requestMeta.requestId} adapter=${adapter.name} model=${model} stream=${stream} tools=${toolCount} lineage=${lineageType} session=${resumeSessionId?.slice(0, 8) || "new"}${isUndo && undoRollbackUuid ? ` rollback=${undoRollbackUuid.slice(0, 8)}` : ""}${agentMode ? ` agent=${agentMode}` : ""} active=${activeSessions}/${MAX_CONCURRENT_SESSIONS} msgCount=${msgCount}`
+        const requestLogLine = `${requestMeta.requestId} adapter=${adapter.name}${requestSource ? ` source=${requestSource}` : ""} model=${model} stream=${stream} tools=${toolCount} lineage=${lineageType} session=${resumeSessionId?.slice(0, 8) || "new"}${isUndo && undoRollbackUuid ? ` rollback=${undoRollbackUuid.slice(0, 8)}` : ""}${agentMode ? ` agent=${agentMode}` : ""} active=${activeSessions}/${MAX_CONCURRENT_SESSIONS} msgCount=${msgCount}`
         console.error(`[PROXY] ${requestLogLine} msgs=${msgSummary}`)
         diagnosticLog.session(`${requestLogLine}`, requestMeta.requestId)
 
         // Recovery logging: when a session diverges, check if the store has a
         // previous session ID that the user can recover via `claude --resume`.
-        if (lineageResult.type === "diverged" && profileSessionId) {
+        if (lineageResult.type === "diverged" && profileSessionId && !isIndependentSession) {
           const recovery = lookupSessionRecovery(profileSessionId)
           if (recovery) {
             const prevId = recovery.previousClaudeSessionId || recovery.claudeSessionId
@@ -1086,8 +1109,10 @@ export function createProxyServer(config: Partial<ProxyConfig> = {}): ProxyServe
             cacheHitRate: computeCacheHitRate(lastUsage),
           })
 
-          // Store session for future resume
-              if (currentSessionId) {
+          // Store session for future resume.
+          // Fork/subagent requests don't write to the cache — see lookupSession
+          // block above for rationale (avoids polluting the parent's key).
+              if (currentSessionId && !isIndependentSession) {
                 storeSession(profileSessionId, body.messages || [], currentSessionId, profileScopedCwd, sdkUuidMap, lastUsage)
               }
 
@@ -1516,8 +1541,10 @@ export function createProxyServer(config: Partial<ProxyConfig> = {}): ProxyServe
                 console.error(`[PROXY] ${requestMeta.requestId} discovered=${discoveredTools.size} (${newNames}) session_total=${allNames.length}`)
               }
 
-              // Store session for future resume
-              if (currentSessionId) {
+              // Store session for future resume.
+              // Fork/subagent requests don't write to the cache (see lookupSession
+              // block for rationale).
+              if (currentSessionId && !isIndependentSession) {
                 storeSession(profileSessionId, body.messages || [], currentSessionId, profileScopedCwd, sdkUuidMap, lastUsage)
               }
 
