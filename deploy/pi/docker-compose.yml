@@ -1,0 +1,65 @@
+# Meridian Docker stack tailored for the Pi coding agent.
+#
+# Builds the proxy from the repository root and binds Meridian to host
+# loopback only. Pi runs on the host, Meridian runs in the container, and
+# Pi's tool execution stays on the host machine (passthrough mode).
+#
+# Usage (from this directory):
+#   ./start.sh   # build + run + import Pi OAuth credentials
+#   ./status.sh  # show container + /health
+#   ./stop.sh    # stop containers (volumes preserved)
+
+name: meridian
+
+services:
+  # Volumes are created as root by Docker. Fix ownership before the proxy
+  # (running as uid 1000 / claude) tries to write to them.
+  init:
+    image: busybox
+    user: root
+    volumes:
+      - claude-auth:/home/claude/.claude
+      - meridian-config:/home/claude/.config/meridian
+      - meridian-cache:/home/claude/.cache/meridian
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        chown -R 1000:1000 /home/claude/.claude /home/claude/.config/meridian /home/claude/.cache/meridian
+    restart: "no"
+
+  proxy:
+    build:
+      # Build from the repo root so the Dockerfile, src/, bin/, etc. are in context.
+      context: ../..
+    image: meridian:local
+    user: "claude"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    ports:
+      # Host-loopback only — Meridian must not be exposed on the LAN
+      # without MERIDIAN_API_KEY (Claude Max credential leak risk).
+      - "127.0.0.1:3456:3456"
+    environment:
+      MERIDIAN_HOST: 0.0.0.0
+      MERIDIAN_PORT: "3456"
+      # Pi mimics Claude Code's User-Agent, so adapter detection needs help.
+      MERIDIAN_DEFAULT_AGENT: pi
+      # Pi executes its own tools; Meridian forwards tool_use blocks to the client.
+      MERIDIAN_PASSTHROUGH: "1"
+      # The SDK subprocess just needs a container-local cwd that exists.
+      # The model still receives Pi's real host cwd as clientWorkingDirectory.
+      MERIDIAN_WORKDIR: /app
+      MERIDIAN_TELEMETRY_PERSIST: "1"
+      MERIDIAN_TELEMETRY_DB: /home/claude/.config/meridian/telemetry.db
+    volumes:
+      - claude-auth:/home/claude/.claude
+      - meridian-config:/home/claude/.config/meridian
+      - meridian-cache:/home/claude/.cache/meridian
+    restart: unless-stopped
+
+volumes:
+  claude-auth:
+  meridian-config:
+  meridian-cache:

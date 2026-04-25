@@ -1,0 +1,57 @@
+{
+  "providers": {
+    "anthropic": {
+      "baseUrl": "http://127.0.0.1:3456",
+      "apiKey": "x",
+      "headers": {
+        "x-meridian-agent": "pi"
+      }
+    },
+    "meridian": {
+      "baseUrl": "http://127.0.0.1:3456",
+      "api": "anthropic-messages",
+      "apiKey": "x",
+      "headers": {
+        "x-meridian-agent": "pi"
+      },
+      "models": [
+        {
+          "id": "claude-sonnet-4-6",
+          "name": "Claude Sonnet 4.6 (Meridian)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 1000000,
+          "maxTokens": 64000,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "claude-opus-4-6",
+          "name": "Claude Opus 4.6 (Meridian)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 1000000,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "claude-opus-4-7",
+          "name": "Claude Opus 4.7 (Meridian)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "name": "Claude Haiku 4.5 (Meridian)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 200000,
+          "maxTokens": 16384,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}
