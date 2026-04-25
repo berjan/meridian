@@ -24,18 +24,16 @@ RUN deluser --remove-home node 2>/dev/null; \
 USER claude
 WORKDIR /app
 
+# The Claude Agent SDK requires the native Claude Code executable in Docker.
+# Install it globally as root-owned but executable by the non-root claude user.
+USER root
+RUN npm install -g @anthropic-ai/claude-code@latest
+USER claude
+
 COPY --from=build --chown=claude:claude /app/node_modules ./node_modules
 COPY --from=build --chown=claude:claude /app/dist ./dist
 COPY --from=build --chown=claude:claude /app/package.json ./
 
-# Create a 'claude' wrapper that delegates to the SDK's cli.js.
-# This replaces the global @anthropic-ai/claude-code install which
-# ships a native binary that crashes under QEMU ARM emulation.
-# The SDK's cli.js supports all commands the proxy needs (auth status, etc.).
-RUN mkdir -p /app/bin/shims \
-    && printf '#!/bin/sh\nexec node /app/node_modules/@anthropic-ai/claude-agent-sdk/cli.js "$@"\n' > /app/bin/shims/claude \
-    && chmod +x /app/bin/shims/claude
-ENV PATH="/app/bin/shims:$PATH"
 COPY --chown=claude:claude bin/docker-entrypoint.sh bin/claude-proxy-supervisor.sh ./bin/
 RUN chmod +x ./bin/docker-entrypoint.sh ./bin/claude-proxy-supervisor.sh
 
