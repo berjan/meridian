@@ -5,6 +5,24 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Load .env (if present) so the safety check below sees the same vars
+# Compose will use. Compose itself also auto-loads ./.env.
+if [ -f .env ]; then
+  set -a; . ./.env; set +a
+fi
+
+# Safety guard: never expose Meridian on the LAN without an API key.
+bind="${MERIDIAN_BIND_HOST:-127.0.0.1}"
+if [ "$bind" != "127.0.0.1" ] && [ "$bind" != "localhost" ] && [ -z "${MERIDIAN_API_KEY:-}" ]; then
+  cat >&2 <<EOF
+refusing to start: MERIDIAN_BIND_HOST=$bind exposes Meridian on the network
+but MERIDIAN_API_KEY is empty. Anyone reaching the port could burn your
+Claude Max subscription. Set MERIDIAN_API_KEY to a long random secret in
+.env (or unset MERIDIAN_BIND_HOST to bind to loopback only).
+EOF
+  exit 1
+fi
+
 docker compose up -d --build
 
 # Import Pi's Anthropic OAuth credentials into the container's volume.

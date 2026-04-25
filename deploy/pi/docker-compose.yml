@@ -1,13 +1,23 @@
 # Meridian Docker stack tailored for the Pi coding agent.
 #
-# Builds the proxy from the repository root and binds Meridian to host
-# loopback only. Pi runs on the host, Meridian runs in the container, and
-# Pi's tool execution stays on the host machine (passthrough mode).
+# Builds the proxy from the repository root. Two deployment modes selected
+# via environment variables (set in deploy/pi/.env or your shell):
+#
+#   Local (default) — Pi and Meridian on the same machine:
+#     MERIDIAN_BIND_HOST=127.0.0.1   (default)
+#     MERIDIAN_API_KEY=              (default — no auth needed on loopback)
+#
+#   Shared on LAN — one Meridian server, multiple Pi clients:
+#     MERIDIAN_BIND_HOST=0.0.0.0
+#     MERIDIAN_API_KEY=<long-random-secret>   (REQUIRED — clients must send it)
 #
 # Usage (from this directory):
 #   ./start.sh   # build + run + import Pi OAuth credentials
 #   ./status.sh  # show container + /health
 #   ./stop.sh    # stop containers (volumes preserved)
+#
+# WARNING: never set MERIDIAN_BIND_HOST=0.0.0.0 without also setting
+# MERIDIAN_API_KEY. start.sh enforces this.
 
 name: meridian
 
@@ -38,12 +48,15 @@ services:
       init:
         condition: service_completed_successfully
     ports:
-      # Host-loopback only — Meridian must not be exposed on the LAN
-      # without MERIDIAN_API_KEY (Claude Max credential leak risk).
-      - "127.0.0.1:3456:3456"
+      # Bind interface controlled by .env (defaults to loopback only).
+      # 0.0.0.0 exposes Meridian on the LAN — REQUIRES MERIDIAN_API_KEY.
+      - "${MERIDIAN_BIND_HOST:-127.0.0.1}:3456:3456"
     environment:
       MERIDIAN_HOST: 0.0.0.0
       MERIDIAN_PORT: "3456"
+      # When non-empty, all /v1/* and admin routes require this key in
+      # x-api-key or Authorization: Bearer. /health and / stay open.
+      MERIDIAN_API_KEY: ${MERIDIAN_API_KEY:-}
       # Pi mimics Claude Code's User-Agent, so adapter detection needs help.
       MERIDIAN_DEFAULT_AGENT: pi
       # Pi executes its own tools; Meridian forwards tool_use blocks to the client.

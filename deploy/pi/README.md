@@ -69,6 +69,44 @@ Or interactively from inside Pi: `/model` → pick a `meridian/*` entry.
 ./start.sh    # build (if Dockerfile/source changed) + start + re-import OAuth
 ```
 
+## Shared LAN deployment (one Meridian, many Pi clients)
+
+If several machines on your LAN should share a single Claude Max
+subscription, run Meridian once on the host with the most spare capacity
+and point the others at it.
+
+**On the Meridian server (e.g. `3090-ai`):**
+
+```bash
+cd /srv/meridian/deploy/pi
+cp .env.example .env
+# edit .env:
+#   MERIDIAN_BIND_HOST=0.0.0.0
+#   MERIDIAN_API_KEY=$(openssl rand -hex 32)
+./start.sh
+```
+
+`start.sh` refuses to start with `MERIDIAN_BIND_HOST=0.0.0.0` and an empty
+`MERIDIAN_API_KEY` — a network-exposed Meridian without auth would let
+anyone on the LAN burn the Max subscription.
+
+**On each Pi client (e.g. `office`, `ai`):**
+
+```bash
+docker compose -f /srv/meridian/deploy/pi/docker-compose.yml down 2>/dev/null  # stop any local Meridian
+mkdir -p ~/.pi/agent
+cp /srv/meridian/deploy/pi/models.network.json.example ~/.pi/agent/models.json
+# edit ~/.pi/agent/models.json:
+#   set baseUrl to http://<server-ip>:3456 (already templated)
+#   set apiKey  to the same MERIDIAN_API_KEY value as the server
+```
+
+Then `pi --model meridian/claude-opus-4-7` on any client routes through the
+shared server.
+
+The local-loopback default still works for any machine where Pi and
+Meridian live on the same host — just don't set the env vars.
+
 Inspect runtime logs:
 
 ```bash
